@@ -20,111 +20,115 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
- */
+*/
 
 // Package smsbackuprestore contains types, type methods, and functions for parsing SMS Backup & Restore Android app
 // XML output and generating delimited data and decoding images from MMS messages.
 package smsbackuprestore
 
 import (
-	"encoding/xml"
-	"strconv"
-	"time"
-	"fmt"
 	"encoding/base64"
+	"encoding/xml"
+	"fmt"
 	"io/ioutil"
 	"os"
+	"strconv"
+	"time"
 )
 
-type PhoneNumber 		string
-type SMSMessageType 	int
-type SMSStatus			int
-type AndroidTS 			string
-type BoolValue			int
-type ReadStatus			int
-type CallType			int
+type PhoneNumber string
+type SMSMessageType int
+type SMSStatus int
+type AndroidTS string
+type BoolValue int
+type ReadStatus int
+type CallType int
+type AddrType int
 
 type Messages struct {
-	XMLName 			xml.Name 		`xml:"smses"`
-	Count 				string 			`xml:"count,attr"`
-	BackupSet			string			`xml:"backup_set,attr"`
-	BackupDate			AndroidTS		`xml:"backup_date,string,attr"`
-	SMS 				[]SMS			`xml:"sms"`
-	MMS 				[]MMS			`xml:"mms"`
+	XMLName    xml.Name  `xml:"smses"`
+	Count      string    `xml:"count,attr"`
+	BackupSet  string    `xml:"backup_set,attr"`
+	BackupDate AndroidTS `xml:"backup_date,string,attr"`
+	SMS        []SMS     `xml:"sms"`
+	MMS        []MMS     `xml:"mms"`
 }
 
 type SMS struct {
-	XMLName 			xml.Name 		`xml:"sms"`
-	Protocol			string			`xml:"protocol,attr"`
-	Address				PhoneNumber		`xml:"address,string,attr"`
-	Type				SMSMessageType	`xml:"type,string,attr"`
-	Subject				string			`xml:"subject,attr"`
-	Body				string			`xml:"body,attr"`
-	ServiceCenter		PhoneNumber		`xml:"service_center,string,attr"`
-	Status				SMSStatus		`xml:"status,string,attr"`
-	Read				ReadStatus		`xml:"read,string,attr"`
-	Date				AndroidTS 		`xml:"date,string,attr"`  // consider reading in as int
-	Locked				BoolValue		`xml:"locked,string,attr"`
-	DateSent			AndroidTS		`xml:"date_sent,string,attr"`
-	ReadableDate		string			`xml:"readable_date,attr"`
-	ContactName			string			`xml:"contact_name,attr"`
+	XMLName       xml.Name       `xml:"sms"`
+	Protocol      string         `xml:"protocol,attr"`
+	Address       PhoneNumber    `xml:"address,string,attr"`
+	Type          SMSMessageType `xml:"type,string,attr"`
+	Subject       string         `xml:"subject,attr"`
+	Body          string         `xml:"body,attr"`
+	ServiceCenter PhoneNumber    `xml:"service_center,string,attr"`
+	Status        SMSStatus      `xml:"status,string,attr"`
+	Read          ReadStatus     `xml:"read,string,attr"`
+	Date          AndroidTS      `xml:"date,string,attr"` // consider reading in as int
+	Locked        BoolValue      `xml:"locked,string,attr"`
+	DateSent      AndroidTS      `xml:"date_sent,string,attr"`
+	ReadableDate  string         `xml:"readable_date,attr"`
+	ContactName   string         `xml:"contact_name,attr"`
 }
 
 type MMS struct {
-	XMLName 			xml.Name 		`xml:"mms"`
-	TextOnly			BoolValue		`xml:"text_only,string,attr"`
-	Read				ReadStatus		`xml:"read,string,attr"`
-	Date				AndroidTS		`xml:"date,string,attr"`  // consider reading in as int
-	Locked				BoolValue		`xml:"locked,string,attr"`
-	DateSent			AndroidTS		`xml:"date_sent,string,attr"`
-	ReadableDate		string			`xml:"readable_date,attr"`
-	ContactName			string			`xml:"contact_name,attr"`
-	Seen				BoolValue		`xml:"seen,string,attr"`
-	FromAddress			PhoneNumber		`xml:"from_address,string,attr"`
-	Address				PhoneNumber		`xml:"address,string,attr"`
-	MessageClassifier	string			`xml:"m_cls,attr"`
-	MessageSize			string			`xml:"m_size,attr"`
-	Parts				[]Part			`xml:"parts>part"`
-	Addresses			[]Address		`xml:"addrs>addr"`
+	XMLName           xml.Name    `xml:"mms"`
+	TextOnly          BoolValue   `xml:"text_only,string,attr"`
+	Read              ReadStatus  `xml:"read,string,attr"`
+	Date              AndroidTS   `xml:"date,string,attr"` // consider reading in as int
+	Locked            BoolValue   `xml:"locked,string,attr"`
+	DateSent          AndroidTS   `xml:"date_sent,string,attr"`
+	ReadableDate      string      `xml:"readable_date,attr"`
+	ContactName       string      `xml:"contact_name,attr"`
+	Seen              BoolValue   `xml:"seen,string,attr"`
+	FromAddress       PhoneNumber `xml:"from_address,string,attr"`
+	Address           PhoneNumber `xml:"address,string,attr"`
+	MessageClassifier string      `xml:"m_cls,attr"`
+	MessageSize       string      `xml:"m_size,attr"`
+	Parts             []Part      `xml:"parts>part"`
+	Addresses         []Address   `xml:"addrs>addr"`
 }
 
 type Part struct {
-	XMLName 			xml.Name 		`xml:"part"`
-	ContentType			string			`xml:"ct,attr"`
-	Name				string			`xml:"name,attr"`
-	FileName			string			`xml:"fn,attr"`
-	ContentDisplay		string			`xml:"cd,attr"`
-	Text				string			`xml:"text,attr"`
-	Base64Data			string			`xml:"data,attr"`
+	XMLName        xml.Name `xml:"part"`
+	ContentType    string   `xml:"ct,attr"`
+	Name           string   `xml:"name,attr"`
+	FileName       string   `xml:"fn,attr"`
+	ContentDisplay string   `xml:"cd,attr"`
+	Text           string   `xml:"text,attr"`
+	Base64Data     string   `xml:"data,attr"`
 }
 
 type Address struct {
-	XMLName 			xml.Name 		`xml:"addr"`
-	Address				PhoneNumber		`xml:"address,string,attr"`
+	XMLName xml.Name    `xml:"addr"`
+	Address PhoneNumber `xml:"address,string,attr"`
+	Type    AddrType    `xml:"type,string,attr"`
+	Charset string      `xml:"charset,string,attr"`
 }
 
 type Calls struct {
-	XMLName				xml.Name		`xml:"calls"`
-	Count 				string 			`xml:"count,attr"`
-	BackupSet			string			`xml:"backup_set,attr"`
-	BackupDate			AndroidTS		`xml:"backup_date,string,attr"`
-	Calls				[]Call			`xml:"call"`
+	XMLName    xml.Name  `xml:"calls"`
+	Count      string    `xml:"count,attr"`
+	BackupSet  string    `xml:"backup_set,attr"`
+	BackupDate AndroidTS `xml:"backup_date,string,attr"`
+	Calls      []Call    `xml:"call"`
 }
 
 type Call struct {
-	XMLName				xml.Name		`xml:"call"`
-	Number				PhoneNumber		`xml:"number,string,attr"`
-	Duration			int				`xml:"duration,string,attr"`
-	Date				AndroidTS		`xml:"date,string,attr"`  // consider reading in as int
-	Type				CallType		`xml:"type,string,attr"`
-	ReadableDate		string			`xml:"readable_date,attr"`
-	ContactName			string			`xml:"contact_name,attr"`
+	XMLName      xml.Name    `xml:"call"`
+	Number       PhoneNumber `xml:"number,string,attr"`
+	Duration     int         `xml:"duration,string,attr"`
+	Date         AndroidTS   `xml:"date,string,attr"` // consider reading in as int
+	Type         CallType    `xml:"type,string,attr"`
+	ReadableDate string      `xml:"readable_date,attr"`
+	ContactName  string      `xml:"contact_name,attr"`
 }
 
 // String method for SMSMessageType type converts integer to human-readable message type
 //
 // See http://synctech.com.au/fields-in-xml-backup-files/
-//     Type: 1 = Received, 2 = Sent, 3 = Draft, 4 = Outbox, 5 = Failed, 6 = Queued
+//
+//	Type: 1 = Received, 2 = Sent, 3 = Draft, 4 = Outbox, 5 = Failed, 6 = Queued
 func (smt SMSMessageType) String() string {
 	// see http://synctech.com.au/fields-in-xml-backup-files/
 	// type – 1 = Received, 2 = Sent, 3 = Draft, 4 = Outbox, 5 = Failed, 6 = Queued
@@ -132,13 +136,14 @@ func (smt SMSMessageType) String() string {
 	if smt > 0 && smt < 7 {
 		return smsMsgType[smt-1]
 	}
-	return strconv.Itoa(int(smt))  // ignoring error
+	return strconv.Itoa(int(smt)) // ignoring error
 }
 
 // String method for SMSStatus type converts integer to human-readable status
 //
 // See http://synctech.com.au/fields-in-xml-backup-files/
-//     Status: None = -1, Complete = 0, Pending = 32, Failed = 64
+//
+//	Status: None = -1, Complete = 0, Pending = 32, Failed = 64
 func (ss SMSStatus) String() string {
 	// see http://synctech.com.au/fields-in-xml-backup-files/
 	// status – None = -1, Complete = 0, Pending = 32, Failed = 64
@@ -159,7 +164,8 @@ func (ss SMSStatus) String() string {
 // String method for CallType type converts integer to human-readable status
 //
 // See http://synctech.com.au/wp-content/uploads/2017/12/calls.xsl
-//    Type: 1 = Incoming, 2 = Outgoing, 3 = Missed, 4 = Voicemail, 5 = Rejected, 6 = Refused List
+//
+//	Type: 1 = Incoming, 2 = Outgoing, 3 = Missed, 4 = Voicemail, 5 = Rejected, 6 = Refused List
 func (ct CallType) String() string {
 	// see http://synctech.com.au/wp-content/uploads/2017/12/calls.xsl
 	// Type: 1 = Incoming, 2 = Outgoing, 3 = Missed, 4 = Voicemail, 5 = Rejected, 6 = Refused List
@@ -167,13 +173,29 @@ func (ct CallType) String() string {
 	if ct > 0 && ct < 7 {
 		return callType[ct-1]
 	}
-	return strconv.Itoa(int(ct))  // ignoring error
+	return strconv.Itoa(int(ct)) // ignoring error
+}
+
+func (a AddrType) String() string {
+	switch a {
+	case 129:
+		return "BCC"
+	case 130:
+		return "CC"
+	case 151:
+		return "TO"
+	case 137:
+		return "FROM"
+	default:
+		return strconv.Itoa(int(a))
+	}
 }
 
 // String method for ReadStatus type converts integer/boolean to human-readable read status
 //
 // See http://synctech.com.au/fields-in-xml-backup-files/
-//     Read: Read Message = 1, Unread Message = 0
+//
+//	Read: Read Message = 1, Unread Message = 0
 func (rs ReadStatus) String() string {
 	// see http://synctech.com.au/fields-in-xml-backup-files/
 	// read – Read Message = 1, Unread Message = 0
@@ -192,7 +214,7 @@ func (timestamp AndroidTS) String() string {
 	if err != nil {
 		return string(timestamp)
 	}
-	t := time.Unix(i/1000, 0).UTC()
+	t := time.Unix(i/1000, (i%1000)*int64(time.Millisecond)).UTC()
 	return t.String()
 }
 
@@ -260,8 +282,8 @@ func (m *Messages) PrintMessageCountQC() {
 
 	fmt.Printf("Actual # SMS messages identified: %d\n", lengthSMS)
 	fmt.Printf("Actual # MMS messages identified: %d\n", lengthMMS)
-	fmt.Printf("Total actual messages identified: %d ... ", lengthSMS + lengthMMS)
-	if lengthSMS + lengthMMS == count {
+	fmt.Printf("Total actual messages identified: %d ... ", lengthSMS+lengthMMS)
+	if lengthSMS+lengthMMS == count {
 		fmt.Print("OK\n")
 	} else {
 		fmt.Print("DISCREPANCY DETECTED\n")

@@ -20,26 +20,26 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
- */
+*/
 
 // Package main for command-line SMS Backup & Restore parser.
 // This tool parses SMS Backup & Restore Android app XML output.
 package main
 
 import (
-	"fmt"
-	"flag"
-	"os"
-	"io/ioutil"
+	"bytes"
 	"encoding/xml"
+	"flag"
+	"fmt"
 	"github.com/danzek/sms-backup-and-restore-parser/smsbackuprestore"
-	"time"
+	"io/ioutil"
+	"os"
 	"path/filepath"
-	"strings"
 	"regexp"
 	"strconv"
+	"strings"
+	"time"
 	"unicode/utf16"
-	"bytes"
 )
 
 // SMSOutput calls GenerateSMSOutput() and prints status/errors.
@@ -81,7 +81,7 @@ func MMSOutput(m *smsbackuprestore.Messages, outputDir string) {
 }
 
 // CallsOutput calls GenerateCallOutput() and prints status/errors.
-func CallsOutput (c *smsbackuprestore.Calls, outputDir string) {
+func CallsOutput(c *smsbackuprestore.Calls, outputDir string) {
 	// generate calls
 	fmt.Println("\nCreating calls output...")
 	err := smsbackuprestore.GenerateCallOutput(c, outputDir)
@@ -161,7 +161,7 @@ func main() {
 				if fileReadErr != nil {
 					panic(fileReadErr)
 				}
-				
+
 				// remove null bytes encoded as XML entities because the Java developer of SMS Backup & Restore doesn't understand UTF-8 nor XML
 				data = bytes.Replace(data, []byte("&#0;"), []byte(""), -1)
 
@@ -210,8 +210,8 @@ func main() {
 			}
 		}
 	} else {
-		fmt.Fprint(os.Stderr, "Missing required argument: Specify path to xml backup file(s).\n" +
-			"Example: sbrparser.exe C:\\Users\\4n68r\\Documents\\sms-20180213135542.xml\n")  // todo -- use name of executable
+		fmt.Fprint(os.Stderr, "Missing required argument: Specify path to xml backup file(s).\n"+
+			"Example: sbrparser.exe C:\\Users\\4n68r\\Documents\\sms-20180213135542.xml\n") // todo -- use name of executable
 		return
 	}
 

@@ -20,16 +20,16 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
- */
+*/
 
 package smsbackuprestore
 
 import (
-	"path/filepath"
-	"os"
-	"strings"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strconv"
+	"strings"
 )
 
 // DecodeImages identifies base64-encoded images in backed-up MMS messages and decodes them and outputs them to files

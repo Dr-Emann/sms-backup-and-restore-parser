@@ -20,14 +20,14 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
- */
+*/
 
 package smsbackuprestore
 
 import (
+	"regexp"
 	"strings"
 	"unicode"
-	"regexp"
 )
 
 // ReplaceAllBytesSubmatchFunc replaces all bytes in the byte slice that match the specified pattern.
@@ -110,22 +110,22 @@ func RemoveCommasBeforeSuffixes(contacts string) string {
 	// (this function could be its own project)
 	hit := false
 	suffixMap := map[string][]string{
-		"MD": 		{", MD", ",MD", ", M.D", ",M.D"},
-		"DO": 		{", DO", ",DO", ", D.O", ",D.O"},
-		"NP": 		{", NP", ",NP", ", N.P", ",N.P"},
-		"RN": 		{", RN", ",RN", ", R.N", ",R.N"},
-		"JR": 		{", JR", ",JR", ", J.R", ",J.R"},
-		"SR": 		{", SR", ",SR", ", S.R", ",S.R"},
-		"II": 		{", II", ",II"},
-		"III": 		{", III", ",III"},
-		"INC": 		{", INC", ",INC"},
-		"LLP": 		{", LLP", ",LLP", ", L.L.P", ",L.L.P"},
-		"LLC": 		{", LLC", ",LLC", ", L.L.C", ",L.L.C"},
-		"LPN": 		{", LPN", ",LPN", ", L.P.N", ",L.P.N"},
-		"ACSW": 	{", ACSW", ",ACSW", ", A.C.S.W", ",A.C.S.W"},
-		"LCSW": 	{", LCSW", ",LCSW", ", L.C.S.W", ",L.C.S.W"},
-		"MA":		{", MA", ",MA", ", M.A", ",M.A"},
-		"PHD": 		{", PHD", ",PHD", ", PH.D", ",PH.D", ", P.H.D", ",P.H.D"},
+		"MD":   {", MD", ",MD", ", M.D", ",M.D"},
+		"DO":   {", DO", ",DO", ", D.O", ",D.O"},
+		"NP":   {", NP", ",NP", ", N.P", ",N.P"},
+		"RN":   {", RN", ",RN", ", R.N", ",R.N"},
+		"JR":   {", JR", ",JR", ", J.R", ",J.R"},
+		"SR":   {", SR", ",SR", ", S.R", ",S.R"},
+		"II":   {", II", ",II"},
+		"III":  {", III", ",III"},
+		"INC":  {", INC", ",INC"},
+		"LLP":  {", LLP", ",LLP", ", L.L.P", ",L.L.P"},
+		"LLC":  {", LLC", ",LLC", ", L.L.C", ",L.L.C"},
+		"LPN":  {", LPN", ",LPN", ", L.P.N", ",L.P.N"},
+		"ACSW": {", ACSW", ",ACSW", ", A.C.S.W", ",A.C.S.W"},
+		"LCSW": {", LCSW", ",LCSW", ", L.C.S.W", ",L.C.S.W"},
+		"MA":   {", MA", ",MA", ", M.A", ",M.A"},
+		"PHD":  {", PHD", ",PHD", ", PH.D", ",PH.D", ", P.H.D", ",P.H.D"},
 	}
 
 	for s, combos := range suffixMap {
@@ -137,9 +137,9 @@ func RemoveCommasBeforeSuffixes(contacts string) string {
 
 					// special logic for DO/MA false positives
 					if s == "DO" || s == "MA" {
-						if len(contacts) > searchHitIndex+len(suffix) {  // not at end of string
+						if len(contacts) > searchHitIndex+len(suffix) { // not at end of string
 							if unicode.IsLetter(rune(contacts[searchHitIndex+len(suffix)])) {
-								hit = false  // false positive
+								hit = false // false positive
 							}
 						}
 					}

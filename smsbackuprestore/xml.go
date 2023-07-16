@@ -101,6 +101,11 @@ func findElem(decoder *xml.Decoder, names ...string) (xml.StartElement, error) {
 		case xml.StartElement:
 			if _, ok := namesSet[se.Name.Local]; ok {
 				return se, nil
+			} else {
+				err := decoder.Skip()
+				if err != nil {
+					return xml.StartElement{}, err
+				}
 			}
 		}
 	}

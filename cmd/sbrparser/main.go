@@ -168,11 +168,11 @@ func handleFile(err error, xmlFilePath string, pOutputDirectory *string) error {
 
 	// determine file type
 	if strings.HasPrefix(fileName, "sms-") {
-		fmt.Printf("Reading %s\n", fileName)
 		decoder, err := smsbackuprestore.NewSmsMmsDecoder(f)
 		if err != nil {
 			return err
 		}
+		fmt.Printf("Reading %v messages from %v\n", decoder.Messages.Count, fileName)
 
 		if err = decoder.Decode(); err != nil {
 			return err

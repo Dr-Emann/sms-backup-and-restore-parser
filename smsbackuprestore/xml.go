@@ -33,26 +33,19 @@ func NewMessageDecoder(stream io.Reader) (*MessageDecoder, error) {
 			m.BackupDate = AndroidTS(attr.Value)
 		}
 	}
-	return &MessageDecoder{
+	result := &MessageDecoder{
 		decoder:  decoder,
 		Messages: m,
-	}, nil
-}
-
-func (d *MessageDecoder) onSms(sms *SMS) error {
-	if d.OnSMS != nil {
-		return d.OnSMS(sms)
 	}
-	d.Messages.SMS = append(d.Messages.SMS, *sms)
-	return nil
-}
-
-func (d *MessageDecoder) onMms(mms *MMS) error {
-	if d.OnMMS != nil {
-		return d.OnMMS(mms)
+	result.OnSMS = func(sms *SMS) error {
+		result.Messages.SMS = append(result.Messages.SMS, *sms)
+		return nil
 	}
-	d.Messages.MMS = append(d.Messages.MMS, *mms)
-	return nil
+	result.OnMMS = func(mms *MMS) error {
+		result.Messages.MMS = append(result.Messages.MMS, *mms)
+		return nil
+	}
+	return result, nil
 }
 
 func (d *MessageDecoder) Decode() error {
@@ -70,7 +63,7 @@ func (d *MessageDecoder) Decode() error {
 			if err = d.decoder.DecodeElement(&sms, &child); err != nil {
 				return fmt.Errorf("unable to decode sms element: %w", err)
 			}
-			if err = d.onSms(&sms); err != nil {
+			if err = d.OnSMS(&sms); err != nil {
 				return err
 			}
 		} else if child.Name.Local == "mms" {
@@ -78,7 +71,7 @@ func (d *MessageDecoder) Decode() error {
 			if err = d.decoder.DecodeElement(&mms, &child); err != nil {
 				return fmt.Errorf("unable to decode mms element: %w", err)
 			}
-			if err = d.onMms(&mms); err != nil {
+			if err = d.OnMMS(&mms); err != nil {
 				return err
 			}
 		} else {

@@ -27,19 +27,15 @@ SOFTWARE.
 package main
 
 import (
-	"bytes"
 	"encoding/xml"
 	"flag"
 	"fmt"
 	"github.com/danzek/sms-backup-and-restore-parser/smsbackuprestore"
-	"io/ioutil"
+	"io"
 	"os"
 	"path/filepath"
-	"regexp"
-	"strconv"
 	"strings"
 	"time"
-	"unicode/utf16"
 )
 
 // SMSOutput calls GenerateSMSOutput() and prints status/errors.
@@ -142,71 +138,10 @@ func main() {
 				return
 			}
 
-			// get just file name and perform verification checks (assumes default lowercase naming convention)
-			fileName := filepath.Base(xmlFilePath)
-			if (strings.HasPrefix(fileName, "calls-") || strings.HasPrefix(fileName, "sms-")) && filepath.Ext(fileName) == ".xml" {
-				// open xml file
-				f, err := os.Open(xmlFilePath)
-				if err != nil {
-					fmt.Fprintf(os.Stderr, "Error opening XML file: %s\n", xmlFilePath)
-					break
-				}
-				defer f.Close()
-
-				// status message
-				fmt.Printf("\nLoading %s into memory and parsing (this may take a little while) ...\n", xmlFilePath)
-
-				// read entire file into data variable
-				data, fileReadErr := ioutil.ReadFile(xmlFilePath)
-				if fileReadErr != nil {
-					panic(fileReadErr)
-				}
-
-				// remove null bytes encoded as XML entities because the Java developer of SMS Backup & Restore doesn't understand UTF-8 nor XML
-				data = bytes.Replace(data, []byte("&#0;"), []byte(""), -1)
-
-				// attempt to render emoji's properly due to SMS Backup & Restore app rendering of emoji's as HTML entitites in decimal (slow)
-				re := regexp.MustCompile(`&#(\d{5});&#(\d{5});`)
-				data = smsbackuprestore.ReplaceAllBytesSubmatchFunc(re, data, func(groups [][]byte) []byte {
-					high, _ := strconv.Atoi(string(groups[2]))
-					low, _ := strconv.Atoi(string(groups[1]))
-
-					return []byte(fmt.Sprintf("&#%d;", int(utf16.Decode([]uint16{uint16(low), uint16(high)})[0])))
-				})
-
-				// determine file type
-				if strings.HasPrefix(fileName, "sms-") {
-					// sms backup
-					// instantiate messages object
-					m := new(smsbackuprestore.Messages)
-					if err := xml.Unmarshal(data, m); err != nil {
-						panic(err)
-					}
-
-					// print validation / qc / stats to stdout
-					m.PrintMessageCountQC()
-
-					// generate sms
-					SMSOutput(m, *pOutputDirectory)
-
-					// generate mms
-					MMSOutput(m, *pOutputDirectory)
-				} else {
-					// calls backup
-					// instantiate calls object
-					c := new(smsbackuprestore.Calls)
-					if err := xml.Unmarshal(data, c); err != nil {
-						panic(err)
-					}
-
-					// print validation / qc / stats to stdout
-					c.PrintCallCountQC()
-
-					// generate calls output
-					CallsOutput(c, *pOutputDirectory)
-				}
-			} else {
-				fmt.Fprintf(os.Stderr, "Unexpected file name: %s\n", fileName)
+			// open xml file
+			err = handleFile(err, xmlFilePath, pOutputDirectory)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error handling file: %q\n", err)
 			}
 		}
 	} else {
@@ -218,4 +153,108 @@ func main() {
 	// print completion messages
 	fmt.Printf("\nCompleted in %.2f seconds.\n", time.Since(start).Seconds())
 	fmt.Printf("Output saved to %s\n", *pOutputDirectory)
+}
+
+func handleFile(err error, xmlFilePath string, pOutputDirectory *string) error {
+	// get just file name and perform verification checks (assumes default lowercase naming convention)
+	fileName := filepath.Base(xmlFilePath)
+	if !(strings.HasPrefix(fileName, "calls-") || strings.HasPrefix(fileName, "sms-")) || filepath.Ext(fileName) != ".xml" {
+		return fmt.Errorf("unexpected file name: %s", fileName)
+	}
+	f, err := os.Open(xmlFilePath)
+	if err != nil {
+		return fmt.Errorf("error opening '%s': %w", xmlFilePath, err)
+	}
+	defer f.Close()
+
+	decoder := xml.NewDecoder(f)
+
+	// determine file type
+	if strings.HasPrefix(fileName, "sms-") {
+		// sms backup
+		// instantiate messages object
+		m := new(smsbackuprestore.Messages)
+
+		root, err := findElem(decoder, "smses")
+		if err != nil {
+			return fmt.Errorf("unable to find smses element in %s: %w", fileName, err)
+		}
+		for _, attr := range root.Attr {
+			if attr.Name.Local == "count" {
+				m.Count = attr.Value
+			} else if attr.Name.Local == "backup_set" {
+				m.BackupSet = attr.Value
+			} else if attr.Name.Local == "backup_date" {
+				m.BackupDate = smsbackuprestore.AndroidTS(attr.Value)
+			}
+		}
+
+		for {
+			child, err := findElem(decoder, "sms", "mms")
+			if err != nil {
+				if err == io.EOF {
+					break
+				}
+				return fmt.Errorf("unable to find sms or mms element in %s: %w", fileName, err)
+			}
+
+			if child.Name.Local == "sms" {
+				var sms smsbackuprestore.SMS
+				if err = decoder.DecodeElement(&sms, &child); err != nil {
+					return fmt.Errorf("unable to decode sms element in %s: %w", fileName, err)
+				}
+				m.SMS = append(m.SMS, sms)
+			} else if child.Name.Local == "mms" {
+				var mms smsbackuprestore.MMS
+				if err = decoder.DecodeElement(&mms, &child); err != nil {
+					return fmt.Errorf("unable to decode mms element in %s: %w", fileName, err)
+				}
+				m.MMS = append(m.MMS, mms)
+			} else {
+				panic("unexpected element")
+			}
+		}
+
+		// print validation / qc / stats to stdout
+		m.PrintMessageCountQC()
+
+		// generate sms
+		SMSOutput(m, *pOutputDirectory)
+
+		// generate mms
+		MMSOutput(m, *pOutputDirectory)
+	} else {
+		// calls backup
+		// instantiate calls object
+		c := new(smsbackuprestore.Calls)
+		if err := decoder.Decode(c); err != nil {
+			panic(err)
+		}
+
+		// print validation / qc / stats to stdout
+		c.PrintCallCountQC()
+
+		// generate calls output
+		CallsOutput(c, *pOutputDirectory)
+	}
+	return nil
+}
+
+func findElem(decoder *xml.Decoder, names ...string) (xml.StartElement, error) {
+	namesSet := make(map[string]struct{}, len(names))
+	for _, name := range names {
+		namesSet[name] = struct{}{}
+	}
+	for {
+		t, err := decoder.Token()
+		if err != nil {
+			return xml.StartElement{}, err
+		}
+		switch se := t.(type) {
+		case xml.StartElement:
+			if _, ok := namesSet[se.Name.Local]; ok {
+				return se, nil
+			}
+		}
+	}
 }

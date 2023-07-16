@@ -31,7 +31,6 @@ import (
 	"flag"
 	"fmt"
 	"github.com/danzek/sms-backup-and-restore-parser/smsbackuprestore"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -167,53 +166,19 @@ func handleFile(err error, xmlFilePath string, pOutputDirectory *string) error {
 	}
 	defer f.Close()
 
-	decoder := xml.NewDecoder(f)
-
 	// determine file type
 	if strings.HasPrefix(fileName, "sms-") {
-		// sms backup
-		// instantiate messages object
-		m := new(smsbackuprestore.Messages)
-
-		root, err := findElem(decoder, "smses")
+		fmt.Printf("Reading %s\n", fileName)
+		decoder, err := smsbackuprestore.NewSmsMmsDecoder(f)
 		if err != nil {
-			return fmt.Errorf("unable to find smses element in %s: %w", fileName, err)
-		}
-		for _, attr := range root.Attr {
-			if attr.Name.Local == "count" {
-				m.Count = attr.Value
-			} else if attr.Name.Local == "backup_set" {
-				m.BackupSet = attr.Value
-			} else if attr.Name.Local == "backup_date" {
-				m.BackupDate = smsbackuprestore.AndroidTS(attr.Value)
-			}
+			return err
 		}
 
-		for {
-			child, err := findElem(decoder, "sms", "mms")
-			if err != nil {
-				if err == io.EOF {
-					break
-				}
-				return fmt.Errorf("unable to find sms or mms element in %s: %w", fileName, err)
-			}
-
-			if child.Name.Local == "sms" {
-				var sms smsbackuprestore.SMS
-				if err = decoder.DecodeElement(&sms, &child); err != nil {
-					return fmt.Errorf("unable to decode sms element in %s: %w", fileName, err)
-				}
-				m.SMS = append(m.SMS, sms)
-			} else if child.Name.Local == "mms" {
-				var mms smsbackuprestore.MMS
-				if err = decoder.DecodeElement(&mms, &child); err != nil {
-					return fmt.Errorf("unable to decode mms element in %s: %w", fileName, err)
-				}
-				m.MMS = append(m.MMS, mms)
-			} else {
-				panic("unexpected element")
-			}
+		if err = decoder.Decode(); err != nil {
+			return err
 		}
+
+		m := &decoder.Messages
 
 		// print validation / qc / stats to stdout
 		m.PrintMessageCountQC()
@@ -224,6 +189,7 @@ func handleFile(err error, xmlFilePath string, pOutputDirectory *string) error {
 		// generate mms
 		MMSOutput(m, *pOutputDirectory)
 	} else {
+		decoder := xml.NewDecoder(f)
 		// calls backup
 		// instantiate calls object
 		c := new(smsbackuprestore.Calls)
@@ -238,23 +204,4 @@ func handleFile(err error, xmlFilePath string, pOutputDirectory *string) error {
 		CallsOutput(c, *pOutputDirectory)
 	}
 	return nil
-}
-
-func findElem(decoder *xml.Decoder, names ...string) (xml.StartElement, error) {
-	namesSet := make(map[string]struct{}, len(names))
-	for _, name := range names {
-		namesSet[name] = struct{}{}
-	}
-	for {
-		t, err := decoder.Token()
-		if err != nil {
-			return xml.StartElement{}, err
-		}
-		switch se := t.(type) {
-		case xml.StartElement:
-			if _, ok := namesSet[se.Name.Local]; ok {
-				return se, nil
-			}
-		}
-	}
 }

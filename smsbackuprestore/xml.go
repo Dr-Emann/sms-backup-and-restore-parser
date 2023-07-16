@@ -2,6 +2,7 @@ package smsbackuprestore
 
 import (
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"io"
 )
@@ -52,7 +53,7 @@ func (d *MessageDecoder) Decode() error {
 	for {
 		child, err := findElem(d.decoder, "sms", "mms")
 		if err != nil {
-			if err == io.EOF {
+			if errors.Is(err, io.EOF) {
 				return nil
 			}
 			return fmt.Errorf("unable to find sms or mms element: %w", err)

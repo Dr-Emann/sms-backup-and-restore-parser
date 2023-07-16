@@ -12,8 +12,8 @@ type MessageDecoder struct {
 	Messages Messages
 
 	// By default, the decoder will use this to populate the SMS and MMS slices in Messages.
-	OnSMS func(SMS) error
-	OnMMS func(MMS) error
+	OnSMS func(*SMS) error
+	OnMMS func(*MMS) error
 }
 
 func NewMessageDecoder(stream io.Reader) (*MessageDecoder, error) {
@@ -39,19 +39,19 @@ func NewMessageDecoder(stream io.Reader) (*MessageDecoder, error) {
 	}, nil
 }
 
-func (d *MessageDecoder) onSms(sms SMS) error {
+func (d *MessageDecoder) onSms(sms *SMS) error {
 	if d.OnSMS != nil {
 		return d.OnSMS(sms)
 	}
-	d.Messages.SMS = append(d.Messages.SMS, sms)
+	d.Messages.SMS = append(d.Messages.SMS, *sms)
 	return nil
 }
 
-func (d *MessageDecoder) onMms(mms MMS) error {
+func (d *MessageDecoder) onMms(mms *MMS) error {
 	if d.OnMMS != nil {
 		return d.OnMMS(mms)
 	}
-	d.Messages.MMS = append(d.Messages.MMS, mms)
+	d.Messages.MMS = append(d.Messages.MMS, *mms)
 	return nil
 }
 
@@ -70,7 +70,7 @@ func (d *MessageDecoder) Decode() error {
 			if err = d.decoder.DecodeElement(&sms, &child); err != nil {
 				return fmt.Errorf("unable to decode sms element: %w", err)
 			}
-			if err = d.onSms(sms); err != nil {
+			if err = d.onSms(&sms); err != nil {
 				return err
 			}
 		} else if child.Name.Local == "mms" {
@@ -78,7 +78,7 @@ func (d *MessageDecoder) Decode() error {
 			if err = d.decoder.DecodeElement(&mms, &child); err != nil {
 				return fmt.Errorf("unable to decode mms element: %w", err)
 			}
-			if err = d.onMms(mms); err != nil {
+			if err = d.onMms(&mms); err != nil {
 				return err
 			}
 		} else {

@@ -27,84 +27,127 @@ SOFTWARE.
 package main
 
 import (
+	"bufio"
 	"encoding/xml"
 	"flag"
 	"fmt"
 	"github.com/danzek/sms-backup-and-restore-parser/smsbackuprestore"
+	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
 
-// SMSOutput calls GenerateSMSOutput() and prints status/errors.
-func SMSOutput(m *smsbackuprestore.Messages, outputDir string) {
-	// generate sms
-	fmt.Println("\nCreating SMS output...")
-	err := smsbackuprestore.GenerateSMSOutput(m, outputDir)
-	if err != nil {
-		fmt.Printf("Error encountered:\n%q\n", err)
-	} else {
-		fmt.Println("Finished generating SMS output")
-		fmt.Println("sms.tsv file contains tab-separated values (TSV), i.e. use tab character as the delimiter")
-	}
+type StreamingOutput struct {
+	mmsOut   *smsbackuprestore.MMSOutput
+	smsOut   *smsbackuprestore.SMSOutput
+	imageDir string
+
+	smsCount                     int
+	mmsCount                     int
+	numImagesIdentified          int
+	numImagesSuccessfullyWritten int
+	imageOutputErrors            []error
+
+	closeFuncs []func() error
 }
 
-// MMSOutput calls DecodeImages() and GenerateMMSOutput() and prints status/errors.
-func MMSOutput(m *smsbackuprestore.Messages, outputDir string) {
-	var numImagesIdentified = 0
-	var numImagesSuccessfullyWritten = 0
-	var imageOutputErrors []error
-	imageOuputDir := filepath.Join(outputDir, "images")
-	os.MkdirAll(imageOuputDir, os.ModePerm)
+func NewStreamingOutput(outputDir string) (*StreamingOutput, error) {
+	imageDir := filepath.Join(outputDir, "images")
+	err := os.MkdirAll(imageDir, os.ModePerm)
+	if err != nil {
+		return nil, fmt.Errorf("unable to create image directory %s: %w", imageDir, err)
+	}
 
-	withImage := func(fileName string, data []byte) error {
-		numImagesIdentified++
-		outputPath := filepath.Join(imageOuputDir, fileName)
-		err := os.WriteFile(outputPath, data, 0o644)
+	var closeFuncs []func() error
+	defer func() {
+		for _, closeFunc := range closeFuncs {
+			_ = closeFunc()
+		}
+	}()
+	mmsFile, err := os.Create(filepath.Join(outputDir, "mms.tsv"))
+	if err != nil {
+		return nil, fmt.Errorf("unable to create file mms.tsv: %w", err)
+	}
+	closeFuncs = append(closeFuncs, mmsFile.Close)
+	mmsBufFile := bufio.NewWriter(mmsFile)
+	closeFuncs = append(closeFuncs, mmsBufFile.Flush)
+
+	mmsOut, err := smsbackuprestore.NewMMSOutput(mmsBufFile)
+	if err != nil {
+		return nil, err
+	}
+
+	smsFile, err := os.Create(filepath.Join(outputDir, "sms.tsv"))
+	if err != nil {
+		return nil, fmt.Errorf("unable to create file sms.tsv: %w", err)
+	}
+	closeFuncs = append(closeFuncs, smsFile.Close)
+	smsBufFile := bufio.NewWriter(smsFile)
+	closeFuncs = append(closeFuncs, smsBufFile.Flush)
+
+	smsOut, err := smsbackuprestore.NewSMSOutput(smsBufFile)
+	if err != nil {
+		return nil, err
+	}
+
+	result := &StreamingOutput{
+		mmsOut:     mmsOut,
+		smsOut:     smsOut,
+		imageDir:   imageDir,
+		closeFuncs: closeFuncs,
+	}
+	// clear closeFuncs so that they are not called in the defer
+	closeFuncs = nil
+	result.mmsOut.WithImage = func(fileName string, data []byte) error {
+		result.numImagesIdentified++
+		fullFilePath := filepath.Join(result.imageDir, fileName)
+		err := os.WriteFile(fullFilePath, data, 0o644)
 		if err != nil {
-			imageOutputErrors = append(imageOutputErrors, err)
+			result.imageOutputErrors = append(result.imageOutputErrors, err)
 		} else {
-			numImagesSuccessfullyWritten++
+			result.numImagesSuccessfullyWritten++
 		}
 		return nil
 	}
+	return result, nil
+}
 
-	tsvFile, err := os.Create(filepath.Join(outputDir, "mms.tsv"))
+func (s *StreamingOutput) ReadFile(file io.Reader) error {
+	decoder, err := s.Decoder(file)
 	if err != nil {
-		fmt.Printf("Error encountered:\n%q\n", err)
-		return
+		return err
 	}
-	defer tsvFile.Close()
+	return decoder.Decode()
+}
 
-	out, err := smsbackuprestore.NewMMSOutput(tsvFile)
+func (s *StreamingOutput) Decoder(file io.Reader) (*smsbackuprestore.MessageDecoder, error) {
+	decoder, err := smsbackuprestore.NewMessageDecoder(file)
 	if err != nil {
-		fmt.Printf("Error encountered:\n%q\n", err)
-		return
+		return nil, err
 	}
-	out.WithImage = withImage
+	decoder.OnSMS = s.onSms
+	decoder.OnMMS = s.onMms
 
-	// generate mms output
-	fmt.Println("\nCreating MMS output...")
-	for _, mms := range m.MMS {
-		err := out.Write(&mms)
-		if err != nil {
-			fmt.Printf("Error encountered:\n%q\n", err)
-			return
-		}
+	return decoder, nil
+}
+
+func (s *StreamingOutput) Close() {
+	for _, closeFunc := range s.closeFuncs {
+		_ = closeFunc()
 	}
-	fmt.Println("Finished generating MMS output")
-	fmt.Println("mms.tsv file contains tab-separated values (TSV), i.e. use tab character as the delimiter")
+}
 
-	if len(imageOutputErrors) > 0 {
-		for e := range imageOutputErrors {
-			fmt.Printf("\t%q\n", e)
-		}
-	}
-	fmt.Println("Finished decoding images")
-	fmt.Printf("%d images were identified and %d were successfully written to file\n", numImagesIdentified, numImagesSuccessfullyWritten)
-	fmt.Println("Image file names are in format: <original file name (if known)>_<mms index>-<sms index>.<file extension>")
+func (s *StreamingOutput) onSms(sms *smsbackuprestore.SMS) error {
+	s.smsCount++
+	return s.smsOut.Write(sms)
+}
 
+func (s *StreamingOutput) onMms(mms *smsbackuprestore.MMS) error {
+	s.mmsCount++
+	return s.mmsOut.Write(mms)
 }
 
 // CallsOutput calls GenerateCallOutput() and prints status/errors.
@@ -157,36 +200,45 @@ func main() {
 	}
 	fmt.Printf("Output directory set to %s\n", *pOutputDirectory)
 
-	if len(flag.Args()) > 0 {
-		for _, xmlFilePath := range flag.Args() {
-			// ensure file is valid (file path to xml file with sms backup and restore output)
-			fileInfo, err := os.Stat(xmlFilePath)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error with path to XML file: %q\n", err)
-				return
-			} else if fileInfo.IsDir() {
-				fmt.Fprint(os.Stderr, "XML path must point to specific XML filename, not to a directory.\n")
-				return
-			}
-
-			// open xml file
-			err = handleFile(err, xmlFilePath, pOutputDirectory)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error handling file: %q\n", err)
-			}
-		}
-	} else {
+	if len(flag.Args()) <= 0 {
 		fmt.Fprint(os.Stderr, "Missing required argument: Specify path to xml backup file(s).\n"+
 			"Example: sbrparser.exe C:\\Users\\4n68r\\Documents\\sms-20180213135542.xml\n") // todo -- use name of executable
 		return
 	}
 
+	streamingOut, err := NewStreamingOutput(*pOutputDirectory)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error creating output files: %q\n", err)
+	}
+	defer streamingOut.Close()
+	for _, xmlFilePath := range flag.Args() {
+		// ensure file is valid (file path to xml file with sms backup and restore output)
+		fileInfo, err := os.Stat(xmlFilePath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error with path to XML file: %q\n", err)
+			return
+		} else if fileInfo.IsDir() {
+			fmt.Fprint(os.Stderr, "XML path must point to specific XML filename, not to a directory.\n")
+			return
+		}
+
+		// open xml file
+		err = handleFile(err, xmlFilePath, *pOutputDirectory, streamingOut)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error handling file: %q\n", err)
+		}
+	}
+
+	fmt.Println("Finished generating SMS output")
+	fmt.Println("sms.tsv file contains tab-separated values (TSV), i.e. use tab character as the delimiter")
+	fmt.Println("Finished generating MMS output")
+	fmt.Println("mms.tsv file contains tab-separated values (TSV), i.e. use tab character as the delimiter")
 	// print completion messages
 	fmt.Printf("\nCompleted in %.2f seconds.\n", time.Since(start).Seconds())
 	fmt.Printf("Output saved to %s\n", *pOutputDirectory)
 }
 
-func handleFile(err error, xmlFilePath string, pOutputDirectory *string) error {
+func handleFile(err error, xmlFilePath string, outputDir string, out *StreamingOutput) error {
 	// get just file name and perform verification checks (assumes default lowercase naming convention)
 	fileName := filepath.Base(xmlFilePath)
 	if !(strings.HasPrefix(fileName, "calls-") || strings.HasPrefix(fileName, "sms-")) || filepath.Ext(fileName) != ".xml" {
@@ -197,31 +249,45 @@ func handleFile(err error, xmlFilePath string, pOutputDirectory *string) error {
 		return fmt.Errorf("error opening '%s': %w", xmlFilePath, err)
 	}
 	defer f.Close()
+	bufReader := bufio.NewReaderSize(f, 1024*1024)
 
 	// determine file type
 	if strings.HasPrefix(fileName, "sms-") {
-		decoder, err := smsbackuprestore.NewMessageDecoder(f)
+		decoder, err := out.Decoder(bufReader)
 		if err != nil {
 			return err
 		}
+		startSMSCount := out.smsCount
+		startMMSCount := out.mmsCount
 		fmt.Printf("Reading %v messages from %v\n", decoder.Messages.Count, fileName)
-
 		if err = decoder.Decode(); err != nil {
 			return err
 		}
+		lengthSMS := out.smsCount - startSMSCount
+		lengthMMS := out.mmsCount - startMMSCount
 
-		m := &decoder.Messages
+		fmt.Println("\nXML File Validation / QC")
+		fmt.Println("===============================================================")
+		fmt.Printf("Backup Date: %s\n", decoder.Messages.BackupDate.String())
+		fmt.Printf("Message count reported by SMS Backup and Restore app: %s\n", decoder.Messages.Count)
 
-		// print validation / qc / stats to stdout
-		m.PrintMessageCountQC()
+		// convert reportedCount to int for later comparison/validation
+		count, err := strconv.Atoi(decoder.Messages.Count)
+		if err != nil {
+			fmt.Printf("Error converting reported count to integer: %s", decoder.Messages.Count)
+			count = 0
+		}
 
-		// generate sms
-		SMSOutput(m, *pOutputDirectory)
-
-		// generate mms
-		MMSOutput(m, *pOutputDirectory)
+		fmt.Printf("Actual # SMS messages identified: %d\n", lengthSMS)
+		fmt.Printf("Actual # MMS messages identified: %d\n", lengthMMS)
+		fmt.Printf("Total actual messages identified: %d ... ", lengthSMS+lengthMMS)
+		if lengthSMS+lengthMMS == count {
+			fmt.Print("OK\n")
+		} else {
+			fmt.Print("DISCREPANCY DETECTED\n")
+		}
 	} else {
-		decoder := xml.NewDecoder(f)
+		decoder := xml.NewDecoder(bufReader)
 		// calls backup
 		// instantiate calls object
 		c := new(smsbackuprestore.Calls)
@@ -233,7 +299,7 @@ func handleFile(err error, xmlFilePath string, pOutputDirectory *string) error {
 		c.PrintCallCountQC()
 
 		// generate calls output
-		CallsOutput(c, *pOutputDirectory)
+		CallsOutput(c, outputDir)
 	}
 	return nil
 }

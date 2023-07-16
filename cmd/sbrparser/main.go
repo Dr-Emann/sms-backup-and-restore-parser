@@ -52,11 +52,52 @@ func SMSOutput(m *smsbackuprestore.Messages, outputDir string) {
 
 // MMSOutput calls DecodeImages() and GenerateMMSOutput() and prints status/errors.
 func MMSOutput(m *smsbackuprestore.Messages, outputDir string) {
-	// decode and output mms images
-	fmt.Println("\nCreating images output...")
-	numImagesIdentified, numImagesSuccessfullyWritten, imgOutputErrors := smsbackuprestore.DecodeImages(m, outputDir)
-	if imgOutputErrors != nil && len(imgOutputErrors) > 0 {
-		for e := range imgOutputErrors {
+	var numImagesIdentified = 0
+	var numImagesSuccessfullyWritten = 0
+	var imageOutputErrors []error
+	imageOuputDir := filepath.Join(outputDir, "images")
+	os.MkdirAll(imageOuputDir, os.ModePerm)
+
+	withImage := func(fileName string, data []byte) error {
+		numImagesIdentified++
+		outputPath := filepath.Join(imageOuputDir, fileName)
+		err := os.WriteFile(outputPath, data, 0o644)
+		if err != nil {
+			imageOutputErrors = append(imageOutputErrors, err)
+		} else {
+			numImagesSuccessfullyWritten++
+		}
+		return nil
+	}
+
+	tsvFile, err := os.Create(filepath.Join(outputDir, "mms.tsv"))
+	if err != nil {
+		fmt.Printf("Error encountered:\n%q\n", err)
+		return
+	}
+	defer tsvFile.Close()
+
+	out, err := smsbackuprestore.NewMMSOutput(tsvFile)
+	if err != nil {
+		fmt.Printf("Error encountered:\n%q\n", err)
+		return
+	}
+	out.WithImage = withImage
+
+	// generate mms output
+	fmt.Println("\nCreating MMS output...")
+	for _, mms := range m.MMS {
+		err := out.Write(&mms)
+		if err != nil {
+			fmt.Printf("Error encountered:\n%q\n", err)
+			return
+		}
+	}
+	fmt.Println("Finished generating MMS output")
+	fmt.Println("mms.tsv file contains tab-separated values (TSV), i.e. use tab character as the delimiter")
+
+	if len(imageOutputErrors) > 0 {
+		for e := range imageOutputErrors {
 			fmt.Printf("\t%q\n", e)
 		}
 	}
@@ -64,15 +105,6 @@ func MMSOutput(m *smsbackuprestore.Messages, outputDir string) {
 	fmt.Printf("%d images were identified and %d were successfully written to file\n", numImagesIdentified, numImagesSuccessfullyWritten)
 	fmt.Println("Image file names are in format: <original file name (if known)>_<mms index>-<sms index>.<file extension>")
 
-	// generate mms output
-	fmt.Println("\nCreating MMS output...")
-	mmsOutputErr := smsbackuprestore.GenerateMMSOutput(m, outputDir)
-	if mmsOutputErr != nil {
-		fmt.Printf("Error encountered:\n%q\n", mmsOutputErr)
-	} else {
-		fmt.Println("Finished generating MMS output")
-		fmt.Println("mms.tsv file contains tab-separated values (TSV), i.e. use tab character as the delimiter")
-	}
 }
 
 // CallsOutput calls GenerateCallOutput() and prints status/errors.
@@ -168,7 +200,7 @@ func handleFile(err error, xmlFilePath string, pOutputDirectory *string) error {
 
 	// determine file type
 	if strings.HasPrefix(fileName, "sms-") {
-		decoder, err := smsbackuprestore.NewSmsMmsDecoder(f)
+		decoder, err := smsbackuprestore.NewMessageDecoder(f)
 		if err != nil {
 			return err
 		}

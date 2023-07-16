@@ -25,7 +25,9 @@ SOFTWARE.
 package smsbackuprestore
 
 import (
+	"encoding/base64"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -70,7 +72,27 @@ func GenerateMMSOutput(m *Messages, outputDir string) error {
 	}
 	defer mmsOutput.Close()
 
-	// print header row
+	out, err := NewMMSOutput(mmsOutput)
+	if err != nil {
+		return err
+	}
+
+	for i := range m.MMS {
+		if err := out.Write(&m.MMS[i]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+type MMSOutput struct {
+	f   io.Writer
+	idx int
+
+	WithImage func(fileName string, data []byte) error
+}
+
+func NewMMSOutput(f io.Writer) (*MMSOutput, error) {
 	headers := []string{
 		"MMS Index #",
 		"MMS Part Index #",
@@ -94,81 +116,96 @@ func GenerateMMSOutput(m *Messages, outputDir string) error {
 		"Part Content Display",
 		"Part Output Image Name",
 	}
-	fmt.Fprintf(mmsOutput, "%s\n", strings.Join(headers, "\t"))
+	if _, err := fmt.Fprintln(f, strings.Join(headers, "\t")); err != nil {
+		return nil, err
+	}
+	return &MMSOutput{f: f}, nil
+}
 
-	// iterate over mms
-	for mmsIndex, mms := range m.MMS {
-		var names []string
-		var numbers []string
-		var addresses []string
-		var contactNameList string
-		var addressList string
-		addressesList := ""
+func (o *MMSOutput) Write(mms *MMS) error {
+	var names []string
+	var numbers []string
+	var addresses []string
+	var contactNameList string
+	var addressList string
+	addressesList := ""
 
-		groupMessage := false
-		if strings.Contains(mms.ContactName, ",") || strings.Contains(mms.Address.String(), "~") {
-			groupMessage = true
+	groupMessage := false
+	if strings.Contains(mms.ContactName, ",") || strings.Contains(mms.Address.String(), "~") {
+		groupMessage = true
 
-			// get names
-			for _, name := range strings.Split(RemoveCommasBeforeSuffixes(mms.ContactName), ",") {
-				names = append(names, strings.TrimSpace(name))
-			}
-
-			// get/normalize phone numbers
-			for _, number := range strings.Split(mms.Address.String(), "~") {
-				numbers = append(numbers, PhoneNumber(number).String())
-			}
+		// get names
+		for _, name := range strings.Split(RemoveCommasBeforeSuffixes(mms.ContactName), ",") {
+			names = append(names, strings.TrimSpace(name))
 		}
 
-		// create semicolon-delimited output for group messages
-		if groupMessage {
-			// semicolon-delimited fields
-			contactNameList = strings.Join(names, ";")
-			addressList = strings.Join(numbers, ";")
-		} else {
-			contactNameList = RemoveCommasBeforeSuffixes(mms.ContactName)
-			addressList = mms.Address.String()
-		}
-
-		// get any addresses for group message
-		for _, addr := range mms.Addresses {
-			addresses = append(addresses, addr.Address.String())
-		}
-		if len(addresses) > 0 {
-			addressesList = strings.Join(addresses, ";")
-		}
-
-		for partIndex, part := range mms.Parts {
-			imageFile := "N/A"
-			if strings.Contains(part.ContentType, "image/") {
-				imageFile = part.ImageFileName(mmsIndex, partIndex)
-			}
-
-			row := []string{
-				strconv.Itoa(mmsIndex),
-				strconv.Itoa(partIndex),
-				mms.TextOnly.String(),
-				mms.Read.String(),
-				mms.Date.String(),
-				mms.Locked.String(),
-				mms.DateSent.String(),
-				mms.ReadableDate,
-				contactNameList,
-				mms.Seen.String(),
-				mms.FromAddress.String(),
-				addressList,
-				addressesList,
-				mms.MessageClassifier,
-				mms.MessageSize,
-				part.ContentType,
-				part.Name,
-				part.FileName,
-				CleanupMessageBody(part.Text),
-				part.ContentDisplay,
-				imageFile,
-			}
-			fmt.Fprintf(mmsOutput, "%s\n", strings.Join(row, "\t"))
+		// get/normalize phone numbers
+		for _, number := range strings.Split(mms.Address.String(), "~") {
+			numbers = append(numbers, PhoneNumber(number).String())
 		}
 	}
+
+	// create semicolon-delimited output for group messages
+	if groupMessage {
+		// semicolon-delimited fields
+		contactNameList = strings.Join(names, ";")
+		addressList = strings.Join(numbers, ";")
+	} else {
+		contactNameList = RemoveCommasBeforeSuffixes(mms.ContactName)
+		addressList = mms.Address.String()
+	}
+
+	// get any addresses for group message
+	for _, addr := range mms.Addresses {
+		addresses = append(addresses, addr.Address.String())
+	}
+	if len(addresses) > 0 {
+		addressesList = strings.Join(addresses, ";")
+	}
+
+	for partIndex, part := range mms.Parts {
+		imageFileName := "N/A"
+		isImage := strings.Contains(part.ContentType, "image/")
+		if isImage {
+			imageFileName = part.ImageFileName(o.idx, partIndex)
+			if o.WithImage != nil {
+				data, err := base64.StdEncoding.DecodeString(part.Base64Data)
+				if err != nil {
+					return fmt.Errorf("error decoding base64 data for image %s: %v", imageFileName, err)
+				}
+				if err := o.WithImage(imageFileName, data); err != nil {
+					return err
+				}
+			}
+		}
+
+		row := []string{
+			strconv.Itoa(o.idx),
+			strconv.Itoa(partIndex),
+			mms.TextOnly.String(),
+			mms.Read.String(),
+			mms.Date.String(),
+			mms.Locked.String(),
+			mms.DateSent.String(),
+			mms.ReadableDate,
+			contactNameList,
+			mms.Seen.String(),
+			mms.FromAddress.String(),
+			addressList,
+			addressesList,
+			mms.MessageClassifier,
+			mms.MessageSize,
+			part.ContentType,
+			part.Name,
+			part.FileName,
+			CleanupMessageBody(part.Text),
+			part.ContentDisplay,
+			imageFileName,
+		}
+		if _, err := fmt.Fprintf(o.f, "%s\n", strings.Join(row, "\t")); err != nil {
+			return err
+		}
+	}
+	o.idx++
 	return nil
 }

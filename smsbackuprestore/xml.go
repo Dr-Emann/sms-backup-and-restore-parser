@@ -6,7 +6,7 @@ import (
 	"io"
 )
 
-type SmsMmsDecoder struct {
+type MessageDecoder struct {
 	decoder *xml.Decoder
 
 	Messages Messages
@@ -16,7 +16,7 @@ type SmsMmsDecoder struct {
 	OnMMS func(MMS) error
 }
 
-func NewSmsMmsDecoder(stream io.Reader) (*SmsMmsDecoder, error) {
+func NewMessageDecoder(stream io.Reader) (*MessageDecoder, error) {
 	decoder := xml.NewDecoder(stream)
 
 	var m Messages
@@ -33,13 +33,13 @@ func NewSmsMmsDecoder(stream io.Reader) (*SmsMmsDecoder, error) {
 			m.BackupDate = AndroidTS(attr.Value)
 		}
 	}
-	return &SmsMmsDecoder{
+	return &MessageDecoder{
 		decoder:  decoder,
 		Messages: m,
 	}, nil
 }
 
-func (d *SmsMmsDecoder) onSms(sms SMS) error {
+func (d *MessageDecoder) onSms(sms SMS) error {
 	if d.OnSMS != nil {
 		return d.OnSMS(sms)
 	}
@@ -47,7 +47,7 @@ func (d *SmsMmsDecoder) onSms(sms SMS) error {
 	return nil
 }
 
-func (d *SmsMmsDecoder) onMms(mms MMS) error {
+func (d *MessageDecoder) onMms(mms MMS) error {
 	if d.OnMMS != nil {
 		return d.OnMMS(mms)
 	}
@@ -55,7 +55,7 @@ func (d *SmsMmsDecoder) onMms(mms MMS) error {
 	return nil
 }
 
-func (d *SmsMmsDecoder) Decode() error {
+func (d *MessageDecoder) Decode() error {
 	for {
 		child, err := findElem(d.decoder, "sms", "mms")
 		if err != nil {

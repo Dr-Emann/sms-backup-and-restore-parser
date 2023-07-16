@@ -26,6 +26,7 @@ package smsbackuprestore
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -40,7 +41,26 @@ func GenerateSMSOutput(m *Messages, outputDir string) error {
 	}
 	defer smsOutput.Close()
 
-	// print header row
+	out, err := NewSMSOutput(smsOutput)
+	if err != nil {
+		return err
+	}
+	// iterate over sms
+	for i := range m.SMS {
+		if err := out.Write(&m.SMS[i]); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+type SMSOutput struct {
+	f   io.Writer
+	idx int
+}
+
+func NewSMSOutput(f io.Writer) (*SMSOutput, error) {
 	headers := []string{
 		"SMS Index #",
 		"Protocol",
@@ -57,28 +77,31 @@ func GenerateSMSOutput(m *Messages, outputDir string) error {
 		"Readable Date",
 		"Contact Name",
 	}
-	fmt.Fprintf(smsOutput, "%s\n", strings.Join(headers, "\t"))
 
-	// iterate over sms
-	for i, sms := range m.SMS {
-		row := []string{
-			strconv.Itoa(i),
-			sms.Protocol,
-			sms.Address.String(),
-			sms.Type.String(),
-			sms.Subject,
-			CleanupMessageBody(sms.Body),
-			sms.ServiceCenter.String(),
-			sms.Status.String(),
-			sms.Read.String(),
-			sms.Date.String(),
-			sms.Locked.String(),
-			sms.DateSent.String(),
-			sms.ReadableDate,
-			RemoveCommasBeforeSuffixes(sms.ContactName),
-		}
-		fmt.Fprintf(smsOutput, "%s\n", strings.Join(row, "\t"))
+	if _, err := fmt.Fprintln(f, strings.Join(headers, "\t")); err != nil {
+		return nil, err
 	}
+	return &SMSOutput{f: f}, nil
+}
 
-	return nil
+func (o *SMSOutput) Write(sms *SMS) error {
+	row := []string{
+		strconv.Itoa(o.idx),
+		sms.Protocol,
+		sms.Address.String(),
+		sms.Type.String(),
+		sms.Subject,
+		CleanupMessageBody(sms.Body),
+		sms.ServiceCenter.String(),
+		sms.Status.String(),
+		sms.Read.String(),
+		sms.Date.String(),
+		sms.Locked.String(),
+		sms.DateSent.String(),
+		sms.ReadableDate,
+		RemoveCommasBeforeSuffixes(sms.ContactName),
+	}
+	o.idx++
+	_, err := fmt.Fprintln(o.f, strings.Join(row, "\t"))
+	return err
 }

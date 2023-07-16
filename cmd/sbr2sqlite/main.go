@@ -384,6 +384,12 @@ func handleXmlFile(xmlFilePath string, pOutputDirectory string) bool {
 
 		// print validation / qc / stats to stdout
 		m.PrintMessageCountQC()
+		contacts, err := m.GuessContacts()
+		if err != nil {
+			panic(err)
+		}
+		fmt.Printf("%#v", contacts)
+		return true
 
 		_ = os.Remove("./foo.db")
 		db, err := sql.Open("sqlite3", "./foo.db")

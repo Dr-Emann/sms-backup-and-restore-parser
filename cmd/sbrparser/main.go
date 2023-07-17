@@ -31,6 +31,7 @@ import (
 	"flag"
 	"fmt"
 	"github.com/danzek/sms-backup-and-restore-parser/smsbackuprestore"
+	"github.com/schollz/progressbar/v3"
 	"io"
 	"os"
 	"path/filepath"
@@ -121,8 +122,20 @@ func (s *StreamingOutput) MessageDecoder(file io.Reader) (*smsbackuprestore.Mess
 	if err != nil {
 		return nil, err
 	}
-	decoder.OnSMS = s.onSms
-	decoder.OnMMS = s.onMms
+	expectedLen, parseErr := strconv.ParseInt(decoder.Messages.Count, 10, 64)
+	if parseErr != nil {
+		expectedLen = -1
+	}
+	pb := progressbar.Default(expectedLen, "messages")
+	progressbar.OptionSetItsString("msg")(pb)
+	decoder.OnSMS = func(sms *smsbackuprestore.SMS) error {
+		pb.Add(1)
+		return s.onSms(sms)
+	}
+	decoder.OnMMS = func(mms *smsbackuprestore.MMS) error {
+		pb.Add(1)
+		return s.onMms(mms)
+	}
 
 	return decoder, nil
 }
@@ -132,7 +145,16 @@ func (s *StreamingOutput) CallDecoder(file io.Reader) (*smsbackuprestore.CallDec
 	if err != nil {
 		return nil, err
 	}
-	decoder.OnCall = s.onCall
+	expectedLen, parseErr := strconv.ParseInt(decoder.Calls.Count, 10, 64)
+	if parseErr != nil {
+		expectedLen = -1
+	}
+	pb := progressbar.Default(expectedLen, "calls")
+	progressbar.OptionSetItsString("call")(pb)
+	decoder.OnCall = func(call *smsbackuprestore.Call) error {
+		pb.Add(1)
+		return s.onCall(call)
+	}
 
 	return decoder, nil
 }
@@ -272,7 +294,6 @@ func handleFile(err error, xmlFilePath string, outputDir string, out *StreamingO
 		}
 		startSMSCount := out.smsCount
 		startMMSCount := out.mmsCount
-		fmt.Printf("Reading %v messages from %v\n", decoder.Messages.Count, fileName)
 		if err = decoder.Decode(); err != nil {
 			return err
 		}
@@ -309,7 +330,6 @@ func handleFile(err error, xmlFilePath string, outputDir string, out *StreamingO
 		}
 
 		startCallCount := out.callCount
-		fmt.Printf("Reading %v calls from %v\n", decoder.Calls.Count, fileName)
 		backupInfo := &decoder.Calls
 		if err = decoder.Decode(); err != nil {
 			return err

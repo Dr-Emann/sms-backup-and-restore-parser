@@ -44,13 +44,17 @@ type BoolValue int
 type ReadStatus int
 type CallType int
 
-type Messages struct {
-	XMLName    xml.Name  `xml:"smses"`
+type BackupInfo struct {
 	Count      string    `xml:"count,attr"`
 	BackupSet  string    `xml:"backup_set,attr"`
 	BackupDate AndroidTS `xml:"backup_date,string,attr"`
-	SMS        []SMS     `xml:"sms"`
-	MMS        []MMS     `xml:"mms"`
+}
+
+type Messages struct {
+	XMLName xml.Name `xml:"smses"`
+	BackupInfo
+	SMS []SMS `xml:"sms"`
+	MMS []MMS `xml:"mms"`
 }
 
 type SMS struct {
@@ -104,11 +108,9 @@ type Address struct {
 }
 
 type Calls struct {
-	XMLName    xml.Name  `xml:"calls"`
-	Count      string    `xml:"count,attr"`
-	BackupSet  string    `xml:"backup_set,attr"`
-	BackupDate AndroidTS `xml:"backup_date,string,attr"`
-	Calls      []Call    `xml:"call"`
+	XMLName xml.Name `xml:"calls"`
+	BackupInfo
+	Calls []Call `xml:"call"`
 }
 
 type Call struct {

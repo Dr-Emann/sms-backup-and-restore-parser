@@ -20,24 +20,15 @@ type MessageDecoder struct {
 func NewMessageDecoder(stream io.Reader) (*MessageDecoder, error) {
 	decoder := xml.NewDecoder(stream)
 
-	var m Messages
+	result := &MessageDecoder{
+		decoder: decoder,
+	}
 	root, err := findElem(decoder, "smses")
 	if err != nil {
 		return nil, fmt.Errorf("unable to find root smses element: %w", err)
 	}
-	for _, attr := range root.Attr {
-		if attr.Name.Local == "count" {
-			m.Count = attr.Value
-		} else if attr.Name.Local == "backup_set" {
-			m.BackupSet = attr.Value
-		} else if attr.Name.Local == "backup_date" {
-			m.BackupDate = AndroidTS(attr.Value)
-		}
-	}
-	result := &MessageDecoder{
-		decoder:  decoder,
-		Messages: m,
-	}
+	fillBackupInfo(&result.Messages.BackupInfo, root)
+
 	result.OnSMS = func(sms *SMS) error {
 		result.Messages.SMS = append(result.Messages.SMS, *sms)
 		return nil
@@ -77,6 +68,65 @@ func (d *MessageDecoder) Decode() error {
 			}
 		} else {
 			panic("unexpected element")
+		}
+	}
+}
+
+type CallDecoder struct {
+	decoder *xml.Decoder
+
+	Calls Calls
+
+	OnCall func(*Call) error
+}
+
+func NewCallDecoder(stream io.Reader) (*CallDecoder, error) {
+	decoder := xml.NewDecoder(stream)
+
+	result := &CallDecoder{
+		decoder: decoder,
+	}
+	root, err := findElem(decoder, "calls")
+	if err != nil {
+		return nil, fmt.Errorf("unable to find root calls element: %w", err)
+	}
+	fillBackupInfo(&result.Calls.BackupInfo, root)
+
+	result.OnCall = func(call *Call) error {
+		result.Calls.Calls = append(result.Calls.Calls, *call)
+		return nil
+	}
+	return result, nil
+}
+
+func (d *CallDecoder) Decode() error {
+	for {
+		child, err := findElem(d.decoder, "call")
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				return nil
+			}
+			return fmt.Errorf("unable to find call element: %w", err)
+		}
+
+		var call Call
+		if err = d.decoder.DecodeElement(&call, &child); err != nil {
+			return fmt.Errorf("unable to decode call element: %w", err)
+		}
+		if err = d.OnCall(&call); err != nil {
+			return err
+		}
+	}
+}
+
+func fillBackupInfo(info *BackupInfo, elem xml.StartElement) {
+	for _, attr := range elem.Attr {
+		if attr.Name.Local == "count" {
+			info.Count = attr.Value
+		} else if attr.Name.Local == "backup_set" {
+			info.BackupSet = attr.Value
+		} else if attr.Name.Local == "backup_date" {
+			info.BackupDate = AndroidTS(attr.Value)
 		}
 	}
 }

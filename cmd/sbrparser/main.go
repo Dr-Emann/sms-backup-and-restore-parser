@@ -28,7 +28,6 @@ package main
 
 import (
 	"bufio"
-	"encoding/xml"
 	"flag"
 	"fmt"
 	"github.com/danzek/sms-backup-and-restore-parser/smsbackuprestore"
@@ -43,10 +42,12 @@ import (
 type StreamingOutput struct {
 	mmsOut   *smsbackuprestore.MMSOutput
 	smsOut   *smsbackuprestore.SMSOutput
+	callsOut *smsbackuprestore.CallOutput
 	imageDir string
 
 	smsCount                     int
 	mmsCount                     int
+	callCount                    int
 	numImagesIdentified          int
 	numImagesSuccessfullyWritten int
 	imageOutputErrors            []error
@@ -115,21 +116,23 @@ func NewStreamingOutput(outputDir string) (*StreamingOutput, error) {
 	return result, nil
 }
 
-func (s *StreamingOutput) ReadFile(file io.Reader) error {
-	decoder, err := s.Decoder(file)
-	if err != nil {
-		return err
-	}
-	return decoder.Decode()
-}
-
-func (s *StreamingOutput) Decoder(file io.Reader) (*smsbackuprestore.MessageDecoder, error) {
+func (s *StreamingOutput) MessageDecoder(file io.Reader) (*smsbackuprestore.MessageDecoder, error) {
 	decoder, err := smsbackuprestore.NewMessageDecoder(file)
 	if err != nil {
 		return nil, err
 	}
 	decoder.OnSMS = s.onSms
 	decoder.OnMMS = s.onMms
+
+	return decoder, nil
+}
+
+func (s *StreamingOutput) CallDecoder(file io.Reader) (*smsbackuprestore.CallDecoder, error) {
+	decoder, err := smsbackuprestore.NewCallDecoder(file)
+	if err != nil {
+		return nil, err
+	}
+	decoder.OnCall = s.onCall
 
 	return decoder, nil
 }
@@ -148,6 +151,11 @@ func (s *StreamingOutput) onSms(sms *smsbackuprestore.SMS) error {
 func (s *StreamingOutput) onMms(mms *smsbackuprestore.MMS) error {
 	s.mmsCount++
 	return s.mmsOut.Write(mms)
+}
+
+func (s *StreamingOutput) onCall(call *smsbackuprestore.Call) error {
+	s.callCount++
+	return s.callsOut.Write(call)
 }
 
 // CallsOutput calls GenerateCallOutput() and prints status/errors.
@@ -229,10 +237,15 @@ func main() {
 		}
 	}
 
-	fmt.Println("Finished generating SMS output")
-	fmt.Println("sms.tsv file contains tab-separated values (TSV), i.e. use tab character as the delimiter")
-	fmt.Println("Finished generating MMS output")
-	fmt.Println("mms.tsv file contains tab-separated values (TSV), i.e. use tab character as the delimiter")
+	if streamingOut.smsCount > 0 {
+		fmt.Printf("%-10d SMS messages processed\n", streamingOut.smsCount)
+	}
+	if streamingOut.mmsCount > 0 {
+		fmt.Printf("%-10d MMS messages processed\n", streamingOut.mmsCount)
+	}
+	if streamingOut.callCount > 0 {
+		fmt.Printf("%-10d calls processed\n", streamingOut.callCount)
+	}
 	// print completion messages
 	fmt.Printf("\nCompleted in %.2f seconds.\n", time.Since(start).Seconds())
 	fmt.Printf("Output saved to %s\n", *pOutputDirectory)
@@ -253,7 +266,7 @@ func handleFile(err error, xmlFilePath string, outputDir string, out *StreamingO
 
 	// determine file type
 	if strings.HasPrefix(fileName, "sms-") {
-		decoder, err := out.Decoder(bufReader)
+		decoder, err := out.MessageDecoder(bufReader)
 		if err != nil {
 			return err
 		}
@@ -286,20 +299,41 @@ func handleFile(err error, xmlFilePath string, outputDir string, out *StreamingO
 		} else {
 			fmt.Print("DISCREPANCY DETECTED\n")
 		}
+		fmt.Println("Finished generating SMS/MMS output")
+		fmt.Println("sms.tsv file contains tab-separated values (TSV), i.e. use tab character as the delimiter")
+		fmt.Println("mms.tsv file contains tab-separated values (TSV), i.e. use tab character as the delimiter")
 	} else {
-		decoder := xml.NewDecoder(bufReader)
-		// calls backup
-		// instantiate calls object
-		c := new(smsbackuprestore.Calls)
-		if err := decoder.Decode(c); err != nil {
-			panic(err)
+		decoder, err := out.CallDecoder(bufReader)
+		if err != nil {
+			return err
 		}
 
-		// print validation / qc / stats to stdout
-		c.PrintCallCountQC()
+		startCallCount := out.callCount
+		fmt.Printf("Reading %v calls from %v\n", decoder.Calls.Count, fileName)
+		backupInfo := &decoder.Calls
+		if err = decoder.Decode(); err != nil {
+			return err
+		}
+		lengthCalls := out.callCount - startCallCount
 
-		// generate calls output
-		CallsOutput(c, outputDir)
+		fmt.Println("\nXML File Validation / QC")
+		fmt.Println("===============================================================")
+		fmt.Printf("Backup Date: %s\n", backupInfo.BackupDate.String())
+		fmt.Printf("Call count reported by SMS Backup and Restore app: %s\n", backupInfo.Count)
+
+		// convert reportedCount to int for later comparison/validation
+		count, err := strconv.Atoi(backupInfo.Count)
+		if err != nil {
+			fmt.Printf("Error converting reported count to integer: %s", backupInfo.Count)
+			count = 0
+		}
+
+		fmt.Printf("Total actual calls identified: %d ... ", lengthCalls)
+		if lengthCalls == count {
+			fmt.Print("OK\n")
+		} else {
+			fmt.Print("DISCREPANCY DETECTED\n")
+		}
 	}
 	return nil
 }

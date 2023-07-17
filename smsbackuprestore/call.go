@@ -26,6 +26,7 @@ package smsbackuprestore
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -40,7 +41,26 @@ func GenerateCallOutput(c *Calls, outputDir string) error {
 	}
 	defer callOutput.Close()
 
-	// print header row
+	out, err := NewCallOutput(callOutput)
+	if err != nil {
+		return err
+	}
+
+	for i := range c.Calls {
+		if err := out.Write(&c.Calls[i]); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+type CallOutput struct {
+	f   io.Writer
+	idx int
+}
+
+func NewCallOutput(f io.Writer) (*CallOutput, error) {
 	headers := []string{
 		"Call Index #",
 		"Number",
@@ -50,21 +70,23 @@ func GenerateCallOutput(c *Calls, outputDir string) error {
 		"Readable Date",
 		"Contact Name",
 	}
-	fmt.Fprintf(callOutput, "%s\n", strings.Join(headers, "\t"))
-
-	// iterate over calls
-	for i, call := range c.Calls {
-		row := []string{
-			strconv.Itoa(i),
-			call.Number.String(),
-			strconv.Itoa(call.Duration),
-			call.Date.String(),
-			call.Type.String(),
-			call.ReadableDate,
-			RemoveCommasBeforeSuffixes(call.ContactName),
-		}
-		fmt.Fprintf(callOutput, "%s\n", strings.Join(row, "\t"))
+	if _, err := fmt.Fprintln(f, strings.Join(headers, "\t")); err != nil {
+		return nil, err
 	}
+	return &CallOutput{f: f}, nil
+}
 
-	return nil
+func (o *CallOutput) Write(call *Call) error {
+	row := []string{
+		strconv.Itoa(o.idx),
+		call.Number.String(),
+		strconv.Itoa(call.Duration),
+		call.Date.String(),
+		call.Type.String(),
+		call.ReadableDate,
+		RemoveCommasBeforeSuffixes(call.ContactName),
+	}
+	o.idx++
+	_, err := fmt.Fprintln(o.f, strings.Join(row, "\t"))
+	return err
 }

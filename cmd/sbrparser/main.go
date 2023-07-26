@@ -122,7 +122,7 @@ func (s *StreamingOutput) MessageDecoder(file io.Reader) (*smsbackuprestore.Mess
 	if err != nil {
 		return nil, err
 	}
-	expectedLen, parseErr := strconv.ParseInt(decoder.Messages.Count, 10, 64)
+	expectedLen, parseErr := strconv.ParseInt(decoder.BackupInfo.Count, 10, 64)
 	if parseErr != nil {
 		expectedLen = -1
 	}
@@ -145,7 +145,7 @@ func (s *StreamingOutput) CallDecoder(file io.Reader) (*smsbackuprestore.CallDec
 	if err != nil {
 		return nil, err
 	}
-	expectedLen, parseErr := strconv.ParseInt(decoder.Calls.Count, 10, 64)
+	expectedLen, parseErr := strconv.ParseInt(decoder.BackupInfo.Count, 10, 64)
 	if parseErr != nil {
 		expectedLen = -1
 	}
@@ -302,13 +302,13 @@ func handleFile(err error, xmlFilePath string, outputDir string, out *StreamingO
 
 		fmt.Println("\nXML File Validation / QC")
 		fmt.Println("===============================================================")
-		fmt.Printf("Backup Date: %s\n", decoder.Messages.BackupDate.String())
-		fmt.Printf("Message count reported by SMS Backup and Restore app: %s\n", decoder.Messages.Count)
+		fmt.Printf("Backup Date: %s\n", decoder.BackupInfo.BackupDate.String())
+		fmt.Printf("Message count reported by SMS Backup and Restore app: %s\n", decoder.BackupInfo.Count)
 
 		// convert reportedCount to int for later comparison/validation
-		count, err := strconv.Atoi(decoder.Messages.Count)
+		count, err := strconv.Atoi(decoder.BackupInfo.Count)
 		if err != nil {
-			fmt.Printf("Error converting reported count to integer: %s", decoder.Messages.Count)
+			fmt.Printf("Error converting reported count to integer: %s", decoder.BackupInfo.Count)
 			count = 0
 		}
 
@@ -330,7 +330,6 @@ func handleFile(err error, xmlFilePath string, outputDir string, out *StreamingO
 		}
 
 		startCallCount := out.callCount
-		backupInfo := &decoder.Calls
 		if err = decoder.Decode(); err != nil {
 			return err
 		}
@@ -338,13 +337,13 @@ func handleFile(err error, xmlFilePath string, outputDir string, out *StreamingO
 
 		fmt.Println("\nXML File Validation / QC")
 		fmt.Println("===============================================================")
-		fmt.Printf("Backup Date: %s\n", backupInfo.BackupDate.String())
-		fmt.Printf("Call count reported by SMS Backup and Restore app: %s\n", backupInfo.Count)
+		fmt.Printf("Backup Date: %s\n", decoder.BackupInfo.BackupDate.String())
+		fmt.Printf("Call count reported by SMS Backup and Restore app: %s\n", decoder.BackupInfo.Count)
 
 		// convert reportedCount to int for later comparison/validation
-		count, err := strconv.Atoi(backupInfo.Count)
+		count, err := strconv.Atoi(decoder.BackupInfo.Count)
 		if err != nil {
-			fmt.Printf("Error converting reported count to integer: %s", backupInfo.Count)
+			fmt.Printf("Error converting reported count to integer: %s", decoder.BackupInfo.Count)
 			count = 0
 		}
 

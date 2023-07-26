@@ -10,9 +10,10 @@ import (
 type MessageDecoder struct {
 	decoder *xml.Decoder
 
-	Messages Messages
+	BackupInfo BackupInfo
 
-	// By default, the decoder will use this to populate the SMS and MMS slices in Messages.
+	// Will be called (if non-nil) for each SMS and MMS message found.
+	// At least one must be set.
 	OnSMS func(*SMS) error
 	OnMMS func(*MMS) error
 }
@@ -27,20 +28,15 @@ func NewMessageDecoder(stream io.Reader) (*MessageDecoder, error) {
 	if err != nil {
 		return nil, fmt.Errorf("unable to find root smses element: %w", err)
 	}
-	fillBackupInfo(&result.Messages.BackupInfo, root)
+	fillBackupInfo(&result.BackupInfo, root)
 
-	result.OnSMS = func(sms *SMS) error {
-		result.Messages.SMS = append(result.Messages.SMS, *sms)
-		return nil
-	}
-	result.OnMMS = func(mms *MMS) error {
-		result.Messages.MMS = append(result.Messages.MMS, *mms)
-		return nil
-	}
 	return result, nil
 }
 
 func (d *MessageDecoder) Decode() error {
+	if d.OnSMS == nil && d.OnMMS == nil {
+		panic("OnSMS or OnMMS must be set")
+	}
 	for {
 		child, err := findElem(d.decoder, "sms", "mms")
 		if err != nil {
@@ -51,20 +47,34 @@ func (d *MessageDecoder) Decode() error {
 		}
 
 		if child.Name.Local == "sms" {
-			var sms SMS
-			if err = d.decoder.DecodeElement(&sms, &child); err != nil {
-				return fmt.Errorf("unable to decode sms element: %w", err)
-			}
-			if err = d.OnSMS(&sms); err != nil {
-				return err
+			if d.OnSMS == nil {
+				err = d.decoder.Skip()
+				if err != nil {
+					return err
+				}
+			} else {
+				var sms SMS
+				if err = d.decoder.DecodeElement(&sms, &child); err != nil {
+					return fmt.Errorf("unable to decode sms element: %w", err)
+				}
+				if err = d.OnSMS(&sms); err != nil {
+					return err
+				}
 			}
 		} else if child.Name.Local == "mms" {
-			var mms MMS
-			if err = d.decoder.DecodeElement(&mms, &child); err != nil {
-				return fmt.Errorf("unable to decode mms element: %w", err)
-			}
-			if err = d.OnMMS(&mms); err != nil {
-				return err
+			if d.OnMMS == nil {
+				err = d.decoder.Skip()
+				if err != nil {
+					return err
+				}
+			} else {
+				var mms MMS
+				if err = d.decoder.DecodeElement(&mms, &child); err != nil {
+					return fmt.Errorf("unable to decode mms element: %w", err)
+				}
+				if err = d.OnMMS(&mms); err != nil {
+					return err
+				}
 			}
 		} else {
 			panic("unexpected element")
@@ -75,7 +85,7 @@ func (d *MessageDecoder) Decode() error {
 type CallDecoder struct {
 	decoder *xml.Decoder
 
-	Calls Calls
+	BackupInfo BackupInfo
 
 	OnCall func(*Call) error
 }
@@ -90,16 +100,15 @@ func NewCallDecoder(stream io.Reader) (*CallDecoder, error) {
 	if err != nil {
 		return nil, fmt.Errorf("unable to find root calls element: %w", err)
 	}
-	fillBackupInfo(&result.Calls.BackupInfo, root)
+	fillBackupInfo(&result.BackupInfo, root)
 
-	result.OnCall = func(call *Call) error {
-		result.Calls.Calls = append(result.Calls.Calls, *call)
-		return nil
-	}
 	return result, nil
 }
 
 func (d *CallDecoder) Decode() error {
+	if d.OnCall == nil {
+		panic("OnCall must be set")
+	}
 	for {
 		child, err := findElem(d.decoder, "call")
 		if err != nil {

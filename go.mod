@@ -2,7 +2,10 @@ module github.com/danzek/sms-backup-and-restore-parser
 
 go 1.19
 
-require github.com/schollz/progressbar/v3 v3.13.1
+require (
+	github.com/mattn/go-sqlite3 v1.14.17
+	github.com/schollz/progressbar/v3 v3.13.1
+)
 
 require (
 	github.com/mattn/go-runewidth v0.0.14 // indirect

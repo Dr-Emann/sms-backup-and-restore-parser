@@ -43,6 +43,7 @@ type AndroidTS string
 type BoolValue int
 type ReadStatus int
 type CallType int
+type AddrType int
 
 type BackupInfo struct {
 	Count      string    `xml:"count,attr"`
@@ -105,6 +106,8 @@ type Part struct {
 type Address struct {
 	XMLName xml.Name    `xml:"addr"`
 	Address PhoneNumber `xml:"address,string,attr"`
+	Type    AddrType    `xml:"type,string,attr"`
+	Charset string      `xml:"charset,string,attr"`
 }
 
 type Calls struct {
@@ -175,6 +178,21 @@ func (ct CallType) String() string {
 	return strconv.Itoa(int(ct)) // ignoring error
 }
 
+func (a AddrType) String() string {
+	switch a {
+	case 129:
+		return "BCC"
+	case 130:
+		return "CC"
+	case 151:
+		return "TO"
+	case 137:
+		return "FROM"
+	default:
+		return strconv.Itoa(int(a))
+	}
+}
+
 // String method for ReadStatus type converts integer/boolean to human-readable read status
 //
 // See http://synctech.com.au/fields-in-xml-backup-files/
@@ -198,7 +216,7 @@ func (timestamp AndroidTS) String() string {
 	if err != nil {
 		return string(timestamp)
 	}
-	t := time.Unix(i/1000, 0).UTC()
+	t := time.Unix(i/1000, (i%1000)*int64(time.Millisecond)).UTC()
 	return t.String()
 }
 

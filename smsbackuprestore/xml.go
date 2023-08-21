@@ -1,10 +1,13 @@
 package smsbackuprestore
 
 import (
+	"archive/zip"
 	"encoding/xml"
 	"errors"
 	"fmt"
 	"io"
+	"os"
+	"strings"
 )
 
 type MessageDecoder struct {
@@ -16,6 +19,51 @@ type MessageDecoder struct {
 	// At least one must be set.
 	OnSMS func(*SMS) error
 	OnMMS func(*MMS) error
+}
+
+type zipCloser struct {
+	zipArchive    io.Closer
+	zipFileReader io.ReadCloser
+}
+
+func (z *zipCloser) Read(p []byte) (int, error) {
+	return z.zipFileReader.Read(p)
+}
+
+func (z *zipCloser) Close() error {
+	if err := z.zipFileReader.Close(); err != nil {
+		return err
+	}
+	return z.zipArchive.Close()
+}
+
+// OpenBackup opens a backup file for reading.
+//
+// The file may be a plain XML file or a ZIP file containing a single XML file.
+func OpenBackup(filePath string) (io.ReadCloser, error) {
+	if strings.HasSuffix(filePath, ".zip") {
+		zipArchive, err := zip.OpenReader(filePath)
+		if err != nil {
+			return nil, fmt.Errorf("error opening zip '%s': %w", filePath, err)
+		}
+		if len(zipArchive.File) != 1 {
+			zipArchive.Close()
+			return nil, fmt.Errorf("unexpected number of files in zip '%s': %d", filePath, len(zipArchive.File))
+		}
+		zipFile := zipArchive.File[0]
+		f, err := zipFile.Open()
+		if err != nil {
+			zipArchive.Close()
+			return nil, fmt.Errorf("error opening file in zip '%s': %w", filePath, err)
+		}
+		return &zipCloser{zipArchive: zipArchive, zipFileReader: f}, nil
+	} else {
+		f, err := os.Open(filePath)
+		if err != nil {
+			return nil, fmt.Errorf("error opening '%s': %w", filePath, err)
+		}
+		return f, nil
+	}
 }
 
 func NewMessageDecoder(stream io.Reader) (*MessageDecoder, error) {

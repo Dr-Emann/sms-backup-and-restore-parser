@@ -360,18 +360,20 @@ func main() {
 func handleFile(err error, xmlFilePath string, out *StreamingOutput) error {
 	// get just file name and perform verification checks (assumes default lowercase naming convention)
 	fileName := filepath.Base(xmlFilePath)
-	if !(strings.HasPrefix(fileName, "calls-") || strings.HasPrefix(fileName, "sms-")) || filepath.Ext(fileName) != ".xml" {
+	if !(strings.HasPrefix(fileName, "calls") || strings.HasPrefix(fileName, "sms")) ||
+		(filepath.Ext(fileName) != ".xml" && filepath.Ext(fileName) != ".zip") {
 		return fmt.Errorf("unexpected file name: %s", fileName)
 	}
-	f, err := os.Open(xmlFilePath)
+	f, err := smsbackuprestore.OpenBackup(xmlFilePath)
 	if err != nil {
-		return fmt.Errorf("error opening '%s': %w", xmlFilePath, err)
+		return err
 	}
 	defer f.Close()
+
 	bufReader := bufio.NewReaderSize(f, 1024*1024)
 
 	// determine file type
-	if strings.HasPrefix(fileName, "sms-") {
+	if strings.HasPrefix(fileName, "sms") {
 		decoder, err := out.MessageDecoder(bufReader)
 		if err != nil {
 			return err
